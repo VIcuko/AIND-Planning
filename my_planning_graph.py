@@ -69,6 +69,9 @@ class PgNode_s(PgNode):
         self.symbol = symbol
         self.is_pos = is_pos
         self.__hash = None
+        self.literal = expr(self.symbol)
+        if not self.is_pos:
+            self.literal = expr('~{}'.format(self.symbol))
 
     def show(self):
         """helper print for debugging shows literal plus counts of parents,
@@ -96,6 +99,11 @@ class PgNode_s(PgNode):
     def __hash__(self):
         self.__hash = self.__hash or hash(self.symbol) ^ hash(self.is_pos)
         return self.__hash
+
+    def __not_eq__(self, other):
+        if isinstance(other, self.__class__):
+            return (self.symbol == other.symbol) \
+                   and (self.is_pos != other.is_pos)
 
 
 class PgNode_a(PgNode):
@@ -177,6 +185,9 @@ class PgNode_a(PgNode):
     def __hash__(self):
         self.__hash = self.__hash or hash(self.action.name) ^ hash(self.action.args)
         return self.__hash
+
+def is_mutex(ef1, ef2):
+    return True if [e1 for e1 in ef1 if e1 in ef2] else False
 
 
 def mutexify(node1: PgNode, node2: PgNode):
@@ -404,8 +415,8 @@ class PlanningGraph():
         :return: bool
         """
         # TODO test for Inconsistent Effects between nodes
-        return is_effect_mutex(node_a1.action.effect_add, node_a2.action.effect_rem) or \
-               is_effect_mutex(node_a1.action.effect_rem, node_a2.action.effect_add)
+        return is_mutex(node_a1.action.effect_add, node_a2.action.effect_rem) or \
+               is_mutex(node_a1.action.effect_rem, node_a2.action.effect_add)
 
     def interference_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
         """
@@ -422,10 +433,10 @@ class PlanningGraph():
         :return: bool
         """
         # TODO test for Interference between nodes
-        return is_effect_mutex(node_a1.action.effect_add, node_a2.action.precond_neg) or \
-               is_effect_mutex(node_a1.action.effect_rem, node_a2.action.precond_pos) or \
-               is_effect_mutex(node_a2.action.effect_add, node_a1.action.precond_neg) or \
-               is_effect_mutex(node_a2.action.effect_rem, node_a1.action.precond_pos)
+        return is_mutex(node_a1.action.effect_add, node_a2.action.precond_neg) or \
+               is_mutex(node_a1.action.effect_rem, node_a2.action.precond_pos) or \
+               is_mutex(node_a2.action.effect_add, node_a1.action.precond_neg) or \
+               is_mutex(node_a2.action.effect_rem, node_a1.action.precond_pos)
 
     def competing_needs_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
         """
@@ -480,11 +491,7 @@ class PlanningGraph():
         :return: bool
         """
         # TODO test for negation between nodes
-        nodelist = list(nodeset)
-        for i, n1 in enumerate(nodelist[:-1]):
-            for n2 in nodelist[i + 1:]:
-                if self.negation_mutex(n1, n2) or self.inconsistent_support_mutex(n1, n2):
-                    mutexify(n1, n2)
+        return node_s1.__not_eq__(node_s2)
 
     def inconsistent_support_mutex(self, node_s1: PgNode_s, node_s2: PgNode_s):
         """
@@ -503,7 +510,14 @@ class PlanningGraph():
         :return: bool
         """
         # TODO test for Inconsistent Support between nodes
-        return False
+        actions_s1 = node_s1.parents
+        actions_s2 = node_s2.parents
+
+        return False if [(a_s1, a_s2)
+                         for a_s1 in actions_s1
+                         for a_s2 in actions_s2
+                         if not a_s1.is_mutex(a_s2)] \
+                     else True
 
     def h_levelsum(self) -> int:
         """The sum of the level costs of the individual goals (admissible if goals independent)
@@ -513,4 +527,17 @@ class PlanningGraph():
         level_sum = 0
         # TODO implement
         # for each goal in the problem, determine the level cost, then add them together
+        for goal in self.problem.goal:
+            is_goal = False
+            for (level, states) in enumerate(self.s_levels):
+                if is_goal:
+                    break
+                else:
+                    for s in states:
+                        if goal == s.literal:
+                            level_sum += level
+                            is_goal = True
+                            break
+            if not is_goal:
+                return float('Inf')
         return level_sum
