@@ -42,6 +42,7 @@ class AirCargoProblem(Problem):
                                       [precond_pos, precond_neg],
                                       [effect_add, effect_rem])
                         loads.append(load)
+           
             return loads
 
         def unload_actions():
@@ -59,6 +60,7 @@ class AirCargoProblem(Problem):
                                         [precond_pos, precond_neg],
                                         [effect_add, effect_rem])
                         unloads.append(unload)
+            
             return unloads
 
         def fly_actions():
@@ -88,42 +90,54 @@ class AirCargoProblem(Problem):
         kb.tell(decode_state(state, self.state_map).pos_sentence())
 
         for action in self.actions_list:
-            # logging.debug("\nAction Name / Args: %r / %r", action.name, action.args)
-            is_possible = True
-            for clause in action.precond_pos:
+            possible = True
+
+            for clause in action.precond_pos: 
                 if clause not in kb.clauses:
-                    is_possible = False
+                    possible = False
+            
             for clause in action.precond_neg:
                 if clause in kb.clauses:
-                    is_possible = False
-            if is_possible:
+                    possible = False
+
+            if possible:
                 possible_actions.append(action)
+
         return possible_actions
 
     def result(self, state: str, action: Action):
 
         new_state = FluentState([], [])
-        old_state = decode_state(state, self.state_map)
-        for pos in old_state.pos:
+        prev_state = decode_state(state, self.state_map)
+        
+        for pos in prev_state.pos:
             if pos not in new_state.pos:
                 new_state.pos.append(pos)
+            
             if pos in new_state.neg:
                 new_state.neg.remove(pos)
-        for rem in old_state.neg:
+
+        for rem in prev_state.neg:
             if rem in new_state.pos:
                 new_state.pos.remove(rem)
+            
             if rem not in new_state.neg:
                 new_state.neg.append(rem)
+        
         for pos in action.effect_add:
             if pos not in new_state.pos:
                 new_state.pos.append(pos)
+        
             if pos in new_state.neg:
                 new_state.neg.remove(pos)
+        
         for rem in action.effect_rem:
             if rem in new_state.pos:
                 new_state.pos.remove(rem)
+        
             if rem not in new_state.neg:
                 new_state.neg.append(rem)
+        
         return encode_state(new_state, self.state_map)
 
     def goal_test(self, state: str) -> bool:
