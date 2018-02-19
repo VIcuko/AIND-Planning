@@ -326,13 +326,26 @@ class PlanningGraph():
             adds S nodes to the current level in self.s_levels[level]
         """
         # TODO add literal S level to the planning graph as described in the Russell-Norvig text
-        # 1. determine what literals to add
-        # 2. connect the nodes
-        # for example, every A node in the previous level has a list of S nodes in effnodes that represent the effect
-        #   produced by the action.  These literals will all be part of the new S level.  Since we are working with sets, they
-        #   may be "added" to the set without fear of duplication.  However, it is important to then correctly create and connect
-        #   all of the new S nodes as children of all the A nodes that could produce them, and likewise add the A nodes to the
-        #   parent sets of the S nodes
+        self.s_levels.append(set())
+        parent_a_nodes = self.a_levels[level-1]
+        count_s_levels_before = len(self.s_levels[level])
+        count_unique = 0; count_total = 0
+        for parent_a_node in parent_a_nodes:
+            effnodes = parent_a_node.effnodes
+            for effnode in effnodes:
+                is_unique_node = True
+                for existing_s_node in self.s_levels[level]:
+                    if effnode == existing_s_node:
+                        parent_a_node.children.add(existing_s_node)
+                        existing_s_node.parents.add(parent_a_node)
+                        is_unique_node = False
+                if is_unique_node:
+                    parent_a_node.children.add(effnode)
+                    effnode.parents.add(parent_a_node)
+                    self.s_levels[level].add(effnode)
+                    count_unique += 1
+                count_total += 1
+        count_s_levels_after = len(self.s_levels[level])
 
     def update_a_mutex(self, nodeset):
         """ Determine and update sibling mutual exclusion for A-level nodes
@@ -391,7 +404,8 @@ class PlanningGraph():
         :return: bool
         """
         # TODO test for Inconsistent Effects between nodes
-        return False
+        return is_effect_mutex(node_a1.action.effect_add, node_a2.action.effect_rem) or \
+               is_effect_mutex(node_a1.action.effect_rem, node_a2.action.effect_add)
 
     def interference_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
         """
