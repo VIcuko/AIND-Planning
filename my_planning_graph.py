@@ -54,7 +54,7 @@ class PgNode_s(PgNode):
         self.__hash = self.__hash or hash(self.symbol) ^ hash(self.is_pos)
         return self.__hash
 
-    def __not_eq__(self, other):
+    def __noteq__(self, other):
         if isinstance(other, self.__class__):
             return (self.symbol == other.symbol) \
                    and (self.is_pos != other.is_pos)
@@ -150,6 +150,7 @@ class PlanningGraph():
         self.s_levels.append(set())  
         for literal in self.fs.pos:
             self.s_levels[level].add(PgNode_s(literal, True))
+        
         for literal in self.fs.neg:
             self.s_levels[level].add(PgNode_s(literal, False))
         
@@ -166,45 +167,54 @@ class PlanningGraph():
 
     def add_action_level(self, level):
         
-        # TODO add action A level to the planning graph as described in the Russell-Norvig text
         self.a_levels.append(set())
         current_s_nodes = self.s_levels[level]
         count_a_levels_before = len(self.a_levels[level])
         count_subsets = 0; count_total = 0
-        for a in self.all_actions:
-            a_node = PgNode_a(a)
+        
+        for action in self.all_actions:
+            a_node = PgNode_a(action)
+            
             if a_node.prenodes.issubset(current_s_nodes):
                 for s_node in current_s_nodes:
                     if s_node in a_node.prenodes:
                         s_node.children.add(a_node)
                         a_node.parents.add(s_node)
+                
                 self.a_levels[level].add(a_node)
                 count_subsets += 1
+            
             count_total += 1
+        
         count_a_levels_after = len(self.a_levels[level])
 
     def add_literal_level(self, level):
 
-        # TODO add literal S level to the planning graph as described in the Russell-Norvig text
         self.s_levels.append(set())
         parent_a_nodes = self.a_levels[level-1]
         count_s_levels_before = len(self.s_levels[level])
         count_unique = 0; count_total = 0
+        
         for parent_a_node in parent_a_nodes:
             effnodes = parent_a_node.effnodes
+        
             for effnode in effnodes:
-                is_unique_node = True
+                is_unique = True
+        
                 for existing_s_node in self.s_levels[level]:
                     if effnode == existing_s_node:
                         parent_a_node.children.add(existing_s_node)
                         existing_s_node.parents.add(parent_a_node)
-                        is_unique_node = False
-                if is_unique_node:
+                        is_unique = False
+        
+                if is_unique:
                     parent_a_node.children.add(effnode)
                     effnode.parents.add(parent_a_node)
                     self.s_levels[level].add(effnode)
                     count_unique += 1
+        
                 count_total += 1
+        
         count_s_levels_after = len(self.s_levels[level])
 
     def update_a_mutex(self, nodeset):
@@ -216,44 +226,49 @@ class PlanningGraph():
                         self.inconsistent_effects_mutex(n1, n2) or
                         self.interference_mutex(n1, n2) or
                         self.competing_needs_mutex(n1, n2)):
+       
                     mutexify(n1, n2)
 
     def serialize_actions(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
 
         if not self.serial:
             return False
+       
         if node_a1.is_persistent or node_a2.is_persistent:
             return False
+       
         return True
 
     def inconsistent_effects_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
 
-        # TODO test for Inconsistent Effects between nodes
-        return is_mutex(node_a1.action.effect_add, node_a2.action.effect_rem) or \
-               is_mutex(node_a1.action.effect_rem, node_a2.action.effect_add)
+        a2_negates_a1 = is_mutex(node_a1.action.effect_add, node_a2.action.effect_rem)
+        a1_negates_a2 = is_mutex(node_a1.action.effect_rem, node_a2.action.effect_add)
+
+        return a2_negates_a1 or a1_negates_a2
 
     def interference_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
 
-        # TODO test for Interference between nodes
-        return is_mutex(node_a1.action.effect_add, node_a2.action.precond_neg) or \
-               is_mutex(node_a1.action.effect_rem, node_a2.action.precond_pos) or \
-               is_mutex(node_a2.action.effect_add, node_a1.action.precond_neg) or \
-               is_mutex(node_a2.action.effect_rem, node_a1.action.precond_pos)
+        a1_a2_precond_neg = is_mutex(node_a1.action.effect_add, node_a2.action.precond_neg)
+        a1_a2_precond_pos = is_mutex(node_a1.action.effect_rem, node_a2.action.precond_pos)
+        a2_a1_precond_neg = is_mutex(node_a2.action.effect_add, node_a1.action.precond_neg)
+        a2_a1_precond_pos = is_mutex(node_a2.action.effect_rem, node_a1.action.precond_pos)
+
+        return  a1_a2_precond_neg or a1_a2_precond_pos or \
+                a2_a1_precond_neg or a2_a1_precond_pos
 
     def competing_needs_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
 
-        # TODO test for Competing Needs between nodes
-        actions_s1 = node_a1.parents
-        actions_s2 = node_a2.parents
-        return True if [(a_s1, a_s2)
-                         for a_s1 in actions_s1
-                         for a_s2 in actions_s2
-                         if a_s1.is_mutex(a_s2)] \
-                    else False
+        for a1_parent in node_a1.parents:
+            for a2_parent in node_a2.parents:
+                if a1_parent.is_mutex(a2_parent):
+                    return True
+       
+        return False
 
     def update_s_mutex(self, nodeset: set):
  
         nodelist = list(nodeset)
+       
         for i, n1 in enumerate(nodelist[:-1]):
             for n2 in nodelist[i + 1:]:
                 if self.negation_mutex(n1, n2) or self.inconsistent_support_mutex(n1, n2):
@@ -261,37 +276,35 @@ class PlanningGraph():
 
     def negation_mutex(self, node_s1: PgNode_s, node_s2: PgNode_s) -> bool:
 
-        # TODO test for negation between nodes
-        return node_s1.__not_eq__(node_s2)
+        return node_s1.__noteq__(node_s2)
 
     def inconsistent_support_mutex(self, node_s1: PgNode_s, node_s2: PgNode_s):
 
-        # TODO test for Inconsistent Support between nodes
-        actions_s1 = node_s1.parents
-        actions_s2 = node_s2.parents
-
-        return False if [(a_s1, a_s2)
-                         for a_s1 in actions_s1
-                         for a_s2 in actions_s2
-                         if not a_s1.is_mutex(a_s2)] \
-                     else True
+        for a1_node in node_s1.parents:
+            for a2_node in node_s2.parents:
+                if not a1_node.is_mutex(a2_node):
+                    return False
+       
+        return True
 
     def h_levelsum(self) -> int:
 
         level_sum = 0
-        # TODO implement
-        # for each goal in the problem, determine the level cost, then add them together
         for goal in self.problem.goal:
             is_goal = False
+            
             for (level, states) in enumerate(self.s_levels):
                 if is_goal:
                     break
+            
                 else:
-                    for s in states:
-                        if goal == s.literal:
+                    for state in states:
+                        if goal == state.literal:
                             level_sum += level
                             is_goal = True
                             break
+            
             if not is_goal:
                 return float('Inf')
+        
         return level_sum
