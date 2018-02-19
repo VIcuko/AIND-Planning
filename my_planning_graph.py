@@ -439,7 +439,13 @@ class PlanningGraph():
         """
 
         # TODO test for Competing Needs between nodes
-        return False
+        actions_s1 = node_a1.parents
+        actions_s2 = node_a2.parents
+        return True if [(a_s1, a_s2)
+                         for a_s1 in actions_s1
+                         for a_s2 in actions_s2
+                         if a_s1.is_mutex(a_s2)] \
+                    else False
 
     def update_s_mutex(self, nodeset: set):
         """ Determine and update sibling mutual exclusion for S-level nodes
@@ -474,7 +480,11 @@ class PlanningGraph():
         :return: bool
         """
         # TODO test for negation between nodes
-        return False
+        nodelist = list(nodeset)
+        for i, n1 in enumerate(nodelist[:-1]):
+            for n2 in nodelist[i + 1:]:
+                if self.negation_mutex(n1, n2) or self.inconsistent_support_mutex(n1, n2):
+                    mutexify(n1, n2)
 
     def inconsistent_support_mutex(self, node_s1: PgNode_s, node_s2: PgNode_s):
         """
